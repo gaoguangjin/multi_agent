@@ -1,8 +1,13 @@
-langgraph
-langchain-core
 langchain-openai
+langchain-core
+langgraph
 zhipuai
 python-dotenv
 fastapi
 uvicorn
 requests
+chromadb
+PyPDF2
+python-docx
+python-multipart
+openai

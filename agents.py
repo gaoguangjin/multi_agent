@@ -1,7 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
-from tools import translate_text, generate_email, generate_meeting_minutes, crawl_and_summarize
+from tools import translate_text, generate_email, generate_meeting_minutes, crawl_and_summarize, knowledge_qa_tool
 from zhipuai import ZhipuAI
 from dotenv import load_dotenv
 import os
@@ -9,15 +9,15 @@ import json
 
 load_dotenv()
 
-# 智谱AI 直接用 OpenAI 兼容接口
+# 智谱LLM（LangChain用，OpenAI兼容格式）
 llm = ChatOpenAI(
     base_url="https://open.bigmodel.cn/api/paas/v4",
     api_key=os.getenv("ZHIPUAI_API_KEY"),
     model="glm-4-flash",
-    temperature=0.3, # 控制输出的随机性，值越大，输出越随机
+    temperature=0.3,
 )
 
-# 管理者用的原生客户端
+# 智谱原生客户端（管理者Agent直接调用）
 client = ZhipuAI(api_key=os.getenv("ZHIPUAI_API_KEY"))
 
 
@@ -46,6 +46,12 @@ def crawl_tool(url: str) -> str:
     return crawl_and_summarize(url)
 
 
+@tool
+def knowledge_tool(question: str) -> str:
+    """基于已上传的文档知识库回答问题。参数：question(用户的问题)"""
+    return knowledge_qa_tool(question)
+
+
 # 1. 调研Agent
 research_agent = create_react_agent(
     llm,
@@ -67,14 +73,22 @@ translate_agent = create_react_agent(
     prompt="你是专业的翻译专家，精通中英日韩等多语言翻译，保证翻译精准、专业，符合目标语言的表达习惯。",
 )
 
+# 4. 知识库问答Agent
+knowledge_agent = create_react_agent(
+    llm,
+    tools=[knowledge_tool],
+    prompt="你是专业的知识库问答专家，能够根据用户上传的文档内容，准确回答相关问题，并标注信息来源。",
+)
 
-# 4. 管理者Agent
+
+# 管理者Agent
 class ManagerAgent:
     def __init__(self):
         self.agent_map = {
             "调研": research_agent,
             "内容创作": content_agent,
             "翻译": translate_agent,
+            "知识库": knowledge_agent,
         }
 
     def _run_agent(self, agent, task_content):
@@ -86,7 +100,7 @@ class ManagerAgent:
         # 第一步：拆解任务
         prompt = f"""
         用户的任务是：{user_task}
-        请你把这个任务拆解成1-3个子任务，每个子任务只能分配给以下Agent之一：调研、内容创作、翻译
+        请你把这个任务拆解成1-3个子任务，每个子任务只能分配给以下Agent之一：调研、内容创作、翻译、知识库
         输出格式要求：严格按照JSON格式输出，示例如下：
         {{
             "sub_tasks": [
@@ -103,12 +117,22 @@ class ManagerAgent:
         只输出JSON，不要其他内容。
         """
         response = client.chat.completions.create(
-            model="glm-4-flash", messages=[{"role": "user", "content": prompt}]
+            model="glm-4-flash",
+            messages=[{"role": "user", "content": prompt}],
         )
+        raw_content = response.choices[0].message.content
         try:
-            task_plan = json.loads(response.choices[0].message.content)
-        except:
-            return "任务拆解失败，请重新描述你的需求"
+            # 去掉 ```json 和 ``` 标记
+            cleaned = raw_content.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1]  # 去掉第一行 ```json
+            if cleaned.endswith("```"):
+                cleaned = cleaned.rsplit("```", 1)[0]  # 去掉最后的 ```
+            cleaned = cleaned.strip()
+            task_plan = json.loads(cleaned)
+        except Exception as e:
+            return f"任务拆解失败：{str(e)}"
+
 
         # 第二步：按顺序执行子任务
         results = []
@@ -120,6 +144,10 @@ class ManagerAgent:
                 continue
             if results:
                 task_content += f"\n已有参考信息：\n{''.join(results)}"
+            else:
+                # 如果是第一个任务且是知识库Agent，加上提示
+                if agent_name == "知识库":
+                    task_content += "\n请直接使用knowledge_tool查询知识库并回答，不要要求用户上传文档。"
             agent = self.agent_map[agent_name]
             output = self._run_agent(agent, task_content)
             results.append(f"【{agent_name}】执行结果：\n{output}\n")
