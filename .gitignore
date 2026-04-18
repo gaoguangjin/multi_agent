@@ -1,6 +1,28 @@
+# 🔑 敏感配置
 .env
-uploads/
+.env.*
+*.key
+*.pem
+
+# 🐍 Python 缓存/虚拟环境
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
 venv/
+env/
+
+# 📂 运行时数据（不要提交）
+uploads/
+chroma/
+*.chroma
+db.sqlite3
 *.log
-chroma_db/
+
+# 🖥️ IDE/系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -158,19 +158,79 @@ def process_and_store(file_path: str) -> str:
 
 # 从知识库检索
 def search_knowledge_base(query: str, top_k: int = 3) -> list:
+    """
+    🔧 调试版本：打印所有中间结果，定位过滤问题
+    """
     try:
+        total = kb_collection.count()
+        print(f"[🔍检索调试] 知识库总chunk数: {total}")
+        
+        if total == 0:
+            print("[🔍检索调试] 知识库为空，直接返回")
+            return []
+        
+        # 生成查询向量
         query_embedding = get_embedding(query)
+        print(f"[🔍检索调试] 查询向量维度: {len(query_embedding)}")
+        
+        # 检索：取全部数据用于调试
         results = kb_collection.query(
             query_embeddings=[query_embedding],
-            n_results=min(top_k, kb_collection.count())
+            n_results=total,  # 取全部，方便调试
+            include=["documents", "distances", "metadatas"]
         )
-        if results["documents"] and results["documents"][0]:
-            # 过滤掉太短或不相关的片段
-            docs = results["documents"][0]
-            filtered = [d for d in docs if len(d.strip()) > 20]
-            return filtered[:top_k]
-        return []
-    except Exception:
+        
+        if not results["documents"] or not results["documents"][0]:
+            print("[🔍检索调试] 检索结果为空")
+            return []
+        
+        docs = results["documents"][0]
+        distances = results["distances"][0]
+        metas = results["metadatas"][0] if results.get("metadatas") else [{}]*len(docs)
+        
+        print(f"[🔍检索调试] 检索到 {len(docs)} 个原始结果")
+        
+        # 🔥 关键：打印每个结果的详细信息
+        scored = []
+        for i, (doc, dist, meta) in enumerate(zip(docs, distances, metas)):
+            doc_len = len(doc.strip())
+            # cosine distance ∈ [0, 2], similarity = 1 - dist
+            similarity = 1 - dist
+            
+            print(f"\n[🔍结果{i+1}]")
+            print(f"  来源: {meta.get('source', 'unknown')}")
+            print(f"  内容长度: {doc_len} 字符")
+            print(f"  内容预览: {doc[:80]}...")
+            print(f"  原始distance: {dist:.4f}")
+            print(f"  计算similarity: {similarity:.4f}")
+            
+            # 检查过滤条件
+            if doc_len < 30:
+                print(f"  ❌ 被过滤: 长度<{30}")
+                continue
+            if similarity <= 0:
+                print(f"  ❌ 被过滤: 相似度<=0 (负相关)")
+                continue
+            
+            print(f"  ✅ 通过过滤")
+            scored.append((doc, similarity))
+        
+        if not scored:
+            print(f"\n[🔍检索调试] ⚠️ 所有结果都被过滤了！")
+            print(f"  建议: 降低长度阈值 或 检查嵌入模型是否正常")
+            return []
+        
+        # 排序 + 返回
+        scored.sort(key=lambda x: x[1], reverse=True)
+        final = [doc for doc, _ in scored[:top_k]]
+        
+        print(f"\n[🔍检索调试] ✅ 最终返回 {len(final)} 个结果")
+        return final
+        
+    except Exception as e:
+        print(f"[🔍检索调试] ❌ 异常: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 

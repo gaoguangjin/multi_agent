@@ -82,6 +82,7 @@ knowledge_agent = create_react_agent(
 
 
 # 管理者Agent
+# ============== agent.py ==============
 class ManagerAgent:
     def __init__(self):
         self.agent_map = {
@@ -91,80 +92,102 @@ class ManagerAgent:
             "知识库": knowledge_agent,
         }
 
+    def _extract_constraints(self, task: str) -> str:
+        """轻量规则提取用户格式/长度/语气要求"""
+        constraints = []
+        if any(kw in task for kw in ["简约", "简短", "一句话", "1 句话", "超简", "100 字", "50 字", "30 字"]):
+            constraints.append("严格遵循字数/句式限制，回答务必精简，不要废话")
+        if any(kw in task for kw in ["详细", "报告", "展开", "全面", "长篇"]):
+            constraints.append("回答需详细展开，结构完整，包含必要背景")
+        if "列表" in task or "表格" in task:
+            constraints.append("使用 Markdown 列表或表格格式呈现")
+        if any(kw in task for kw in ["幽默", "严肃", "正式", "口语"]):
+            constraints.append(f"语气保持为：{[k for k in ['幽默','严肃','正式','口语'] if k in task][0]}")
+        return "；".join(constraints) if constraints else "无特殊格式/字数要求"
+
     def _run_agent(self, agent, task_content):
         result = agent.invoke({"messages": [("user", task_content)]})
         last_msg = result["messages"][-1]
         return last_msg.content
 
     def run(self, user_task):
-        # 第一步：拆解任务
+        # 0. 提取并保留用户约束
+        user_constraints = self._extract_constraints(user_task)
+
+        # 1. 拆解任务
         prompt = f"""
-        用户的任务是：{user_task}
-        请你把这个任务拆解成1-3个子任务，每个子任务只能分配给以下Agent之一：调研、内容创作、翻译、知识库
-        输出格式要求：严格按照JSON格式输出，示例如下：
-        {{
-            "sub_tasks": [
-                {{
-                    "agent": "调研",
-                    "task": "爬取XX官网的产品信息，总结核心功能"
-                }},
-                {{
-                    "agent": "内容创作",
-                    "task": "基于调研结果，生成一封给客户的产品介绍邮件"
-                }}
-            ]
-        }}
-        只输出JSON，不要其他内容。
-        """
+用户任务：{user_task}
+【用户特殊要求】：{user_constraints}
+
+请将任务拆解为 1-3 个子任务，分配给以下 Agent 之一：调研、内容创作、翻译、知识库。
+⚠️ 关键：必须将【用户特殊要求】原样写入每个子任务的 "task" 字段中！
+
+输出格式（严格 JSON，不要其他内容）：
+{{
+    "sub_tasks": [
+        {{"agent": "知识库", "task": "查询 XX 信息【请遵守用户要求】"}},
+        {{"agent": "内容创作", "task": "生成 XX 文案【请遵守用户要求】"}}
+    ]
+}}"""
+
         response = client.chat.completions.create(
             model="glm-4-flash",
             messages=[{"role": "user", "content": prompt}],
         )
-        raw_content = response.choices[0].message.content
+        raw_content = response.choices[0].message.content.strip()
+        if raw_content.startswith("```"):
+            raw_content = raw_content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         try:
-            # 去掉 ```json 和 ``` 标记
-            cleaned = raw_content.strip()
-            if cleaned.startswith("```"):
-                cleaned = cleaned.split("\n", 1)[1]  # 去掉第一行 ```json
-            if cleaned.endswith("```"):
-                cleaned = cleaned.rsplit("```", 1)[0]  # 去掉最后的 ```
-            cleaned = cleaned.strip()
-            task_plan = json.loads(cleaned)
+            task_plan = json.loads(raw_content)
         except Exception as e:
-            return f"任务拆解失败：{str(e)}"
+            return f"任务拆解失败：{str(e)}\n原始输出：{raw_content}"
 
-
-        # 第二步：按顺序执行子任务
+        # 2. 顺序执行子任务
         results = []
         for sub_task in task_plan["sub_tasks"]:
             agent_name = sub_task["agent"]
             task_content = sub_task["task"]
-            if agent_name not in self.agent_map:
-                results.append(f"【{agent_name}】任务执行失败：无对应Agent")
-                continue
+
+            # 强制注入约束（防止拆解阶段遗漏）
+            if user_constraints != "无特殊格式/字数要求" and user_constraints not in task_content:
+                task_content += f"\n【执行要求】{user_constraints}"
+
+            # 附加历史结果作为上下文
             if results:
-                task_content += f"\n已有参考信息：\n{''.join(results)}"
-            else:
-                # 如果是第一个任务且是知识库Agent，加上提示
-                if agent_name == "知识库":
-                    task_content += "\n请直接使用knowledge_tool查询知识库并回答，不要要求用户上传文档。"
+                task_content += f"\n【已有参考】\n{''.join(results[-2:])}"  # 只带最近 2 个，防上下文爆炸
+
+            if agent_name not in self.agent_map:
+                results.append(f"【{agent_name}】跳过：无对应 Agent")
+                continue
+
             agent = self.agent_map[agent_name]
             output = self._run_agent(agent, task_content)
-            results.append(f"【{agent_name}】执行结果：\n{output}\n")
+            results.append(f"【{agent_name}】结果：\n{output}\n")
 
-        # 第三步：汇总最终结果
+        # 3. 最终汇总（核心修复：对齐用户约束）
         final_prompt = f"""
-        基于以下各Agent的执行结果，生成一份完整、清晰的最终报告，给用户呈现最终成果。
-        执行结果：
-        {''.join(results)}
-        """
+用户原始请求：{user_task}
+【必须遵守的约束】：{user_constraints}
+
+请基于以下 Agent 执行结果，生成最终回复。
+⚠️ 规则：
+1. 严格遵守【必须遵守的约束】，绝不添加多余解释、客套话或章节标题
+2. 如果约束要求“简约/一句话”，直接给核心答案，不要铺垫
+3. 语言与用户提问保持一致，不要中英混杂
+
+参考结果：
+{''.join(results)}
+
+最终回复（直接输出给用户的内容，不要带任何前缀）："""
+
         final_response = client.chat.completions.create(
             model="glm-4-flash",
             messages=[{"role": "user", "content": final_prompt}],
         )
+
         return {
             "task": user_task,
             "task_plan": task_plan,
             "process_results": results,
-            "final_result": final_response.choices[0].message.content,
+            "final_result": final_response.choices[0].message.content.strip()
         }

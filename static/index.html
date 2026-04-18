@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>多智能体协同办公系统</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --primary: #2563eb; --primary-hover: #1d4ed8;
+      --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --text-muted: #64748b;
+      --border: #e2e8f0; --success: #10b981; --error: #ef4444; --warning: #f59e0b;
+      --radius: 12px; --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); line-height: 1.6; padding: 20px; }
+    header { max-width: 900px; margin: 0 auto 20px; text-align: center; }
+    h1 { font-size: 1.8rem; margin-bottom: 8px; }
+    .status-bar { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--card); border-radius: 20px; box-shadow: var(--shadow); font-size: 0.85rem; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); }
+    .dot.online { background: var(--success); }
+    main { max-width: 900px; margin: 0 auto; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 2px solid var(--border); padding-bottom: 8px; }
+    .tab { padding: 10px 16px; cursor: pointer; border-radius: var(--radius); font-weight: 500; transition: 0.2s; }
+    .tab:hover { background: #e2e8f0; }
+    .tab.active { background: var(--primary); color: white; }
+    .panel { display: none; background: var(--card); padding: 20px; border-radius: var(--radius); box-shadow: var(--shadow); animation: fadeIn 0.3s; }
+    .panel.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; margin-bottom: 6px; font-weight: 500; font-size: 0.9rem; }
+    input[type="text"], textarea, input[type="file"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; }
+    textarea { resize: vertical; min-height: 100px; }
+    button { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 500; transition: 0.2s; }
+    button:hover { background: var(--primary-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .result-box { margin-top: 16px; padding: 16px; background: #f1f5f9; border-radius: 8px; min-height: 80px; white-space: pre-wrap; word-break: break-word; }
+    .result-box h3 { margin-bottom: 8px; font-size: 1rem; color: var(--text-muted); }
+    .result-content { line-height: 1.7; }
+    .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: var(--card); border-radius: 8px; box-shadow: var(--shadow); transform: translateY(100px); opacity: 0; transition: 0.3s; z-index: 100; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { border-left: 4px solid var(--success); }
+    .toast.error { border-left: 4px solid var(--error); }
+    .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🤖 多智能体协同办公系统</h1>
+    <div class="status-bar">
+      <span class="dot" id="kb-dot"></span>
+      <span id="kb-status">知识库状态: 加载中...</span>
+    </div>
+  </header>
+
+  <main>
+    <nav class="tabs">
+      <div class="tab active" data-target="panel-kb">📁 文档管理</div>
+      <div class="tab" data-target="panel-query">🔍 知识库问答</div>
+      <div class="tab" data-target="panel-task">🚀 智能体任务</div>
+    </nav>
+
+    <section id="panel-kb" class="panel active">
+      <div class="form-group">
+        <label>上传文档到知识库（支持 .txt .pdf .docx）</label>
+        <input type="file" id="file-input" accept=".txt,.pdf,.docx,.doc">
+      </div>
+      <button id="upload-btn" onclick="handleUpload()">上传并解析</button>
+      <div class="result-box">
+        <h3>上传结果</h3>
+        <div id="upload-result" class="result-content">等待上传...</div>
+      </div>
+    </section>
+
+    <section id="panel-query" class="panel">
+      <div class="form-group">
+        <label>提问（支持“50字总结”、“一句话回答”等约束）</label>
+        <textarea id="query-input" placeholder="例如：根据上传的文档，50字总结主要情节"></textarea>
+      </div>
+      <button id="query-btn" onclick="handleQuery()">发送查询</button>
+      <div class="result-box">
+        <h3>回答结果</h3>
+        <div id="query-result" class="result-content"></div>
+        <div class="meta" id="query-meta"></div>
+      </div>
+    </section>
+
+    <section id="panel-task" class="panel">
+      <div class="form-group">
+        <label>下达复合任务（自动拆解、多Agent协同）</label>
+        <textarea id="task-input" placeholder="例如：调研A公司官网，生成一封合作意向邮件，要求正式商务风格"></textarea>
+      </div>
+      <button id="task-btn" onclick="handleTask()">执行任务</button>
+      <div class="result-box">
+        <h3>执行结果</h3>
+        <div id="task-result" class="result-content"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const API_BASE = window.location.origin;
+    let isProcessing = false;
+
+    // Tab 切换
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.target).classList.add('active');
+      });
+    });
+
+    // 检查知识库状态
+    async function checkKBStatus() {
+      try {
+        const res = await fetch(`${API_BASE}/knowledge_base/status`);
+        const data = await res.json();
+        const dot = document.getElementById('kb-dot');
+        const text = document.getElementById('kb-status');
+        if (data.total_chunks > 0) {
+          dot.classList.add('online');
+          text.textContent = `知识库在线 | 共 ${data.total_chunks} 个片段`;
+        } else {
+          dot.classList.remove('online');
+          text.textContent = `知识库为空 | 0 个片段`;
+        }
+      } catch (e) {
+        document.getElementById('kb-status').textContent = '连接失败';
+      }
+    }
+    checkKBStatus();
+    setInterval(checkKBStatus, 15000);
+
+    // Toast 提示
+    function showToast(msg, type = 'success') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `toast ${type} show`;
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // 上传
+    async function handleUpload() {
+      const fileInput = document.getElementById('file-input');
+      const btn = document.getElementById('upload-btn');
+      if (!fileInput.files.length) return showToast('请先选择文件', 'error');
+      
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span>处理中...';
+      const form = new FormData();
+      form.append('file', fileInput.files[0]);
+
+      try {
+        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: form });
+        const data = await res.json();
+        document.getElementById('upload-result').textContent = data.result || JSON.stringify(data);
+        showToast('上传成功');
+        checkKBStatus();
+      } catch (e) {
+        showToast('上传失败: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '上传并解析';
+      }
+    }
+
+    // 查询
+    async function handleQuery() {
+      const input = document.getElementById('query-input');
+      const btn = document.getElementById('query-btn');
+      if (!input.value.trim()) return showToast('请输入问题', 'error');
+      if (isProcessing) return;
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span>思考中...';
+      isProcessing = true;
+
+      try {
+        const res = await fetch(`${API_BASE}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: input.value.trim() })
+        });
+        const data = await res.json();
+        document.getElementById('query-result').innerHTML = marked.parse(data.answer || '无回答');
+        document.getElementById('query-meta').textContent = `耗时: 已检索 ${data.chunk_count} 个片段 | 生成字数: ${data.debug?.answer_length || 0}`;
+        showToast('查询完成');
+      } catch (e) {
+        document.getElementById('query-result').textContent = '请求失败';
+        showToast('查询异常', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '发送查询';
+        isProcessing = false;
+      }
+    }
+
+    // 任务
+    async function handleTask() {
+      const input = document.getElementById('task-input');
+      const btn = document.getElementById('task-btn');
+      if (!input.value.trim()) return showToast('请输入任务描述', 'error');
+      if (isProcessing) return;
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span>智能体调度中...';
+      isProcessing = true;
+
+      try {
+        const res = await fetch(`${API_BASE}/run_task`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task: input.value.trim() })
+        });
+        const data = await res.json();
+        // 优先显示 final_result，支持 Markdown
+        const content = data.final_result || '任务执行完成，但无最终结果';
+        document.getElementById('task-result').innerHTML = marked.parse(content);
+        showToast('任务完成');
+      } catch (e) {
+        document.getElementById('task-result').textContent = '调度失败';
+        showToast('任务异常', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '执行任务';
+        isProcessing = false;
+      }
+    }
+  </script>
+</body>
+</html>
