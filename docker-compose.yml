@@ -1,0 +1,9 @@
+version: '3'
+services:
+  ai-app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./static:/app/static
