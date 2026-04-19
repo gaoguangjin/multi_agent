@@ -1,6 +1,26 @@
+# Git 与 IDE
+.git
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Python 缓存与虚拟环境
 __pycache__
 *.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# 运行时数据（不应打包进镜像）
+uploads/
+chroma/
+*.log
 .env
-.git
-.gitignore
-uploads/*
+.env.*
+
+# 本地测试文件
+test_*.py
+*.ipynb
