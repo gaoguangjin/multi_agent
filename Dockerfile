@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 3. 安装 UV（官方脚本，比 pip 装快 10 倍）
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN pip install --no-cache-dir uv
 
 # 4. 仅复制依赖文件（利用 Docker 缓存！代码改了不重装依赖）
 # 注意：你需要先在本地生成 pyproject.toml 和 uv.lock（见下方说明）
