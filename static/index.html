@@ -278,14 +278,23 @@
         isProcessing = false;
       }
     }
-	async function handleClear() {
+async function handleClear() {
     if(!confirm("⚠️ 确定要清空所有文档数据吗？\n清空后需重启容器才能完全生效。")) return;
+    
     try {
-        const res = await fetch(`${API_BASE}/knowledge_base/clear`, {method: 'POST'});
+        const res = await fetch(`${API_BASE}/knowledge_base/clear`, { method: 'POST' });
         const data = await res.json();
-        showToast(data.msg || '清空成功');
+        
+        // 关键：检查 HTTP 状态码，非 200 会进入 catch
+        if (!res.ok) throw new Error(data.msg || '服务器返回未知错误');
+        
+        showToast(data.msg, 'success');
         checkKBStatus();
-    } catch(e) { showToast('清空失败', 'error'); }
+    } catch(e) {
+        // 显示后端返回的具体失败原因
+        showToast(e.message || '清空失败，请检查容器日志', 'error');
+        console.error("清空接口报错:", e);
+    }
 }
   </script>
 </body>
