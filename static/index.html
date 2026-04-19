@@ -87,6 +87,7 @@
         <input type="file" id="file-input" accept=".txt,.pdf,.docx,.doc">
       </div>
       <button id="upload-btn" onclick="handleUpload()">上传并解析</button>
+	  <button onclick="handleClear()" style="background:#ef4444; margin-left:8px;">🗑️ 清空知识库</button>
       <div class="result-box">
         <h3>上传结果</h3>
         <div id="upload-result" class="result-content">等待上传...</div>
@@ -277,6 +278,15 @@
         isProcessing = false;
       }
     }
+	async function handleClear() {
+    if(!confirm("⚠️ 确定要清空所有文档数据吗？\n清空后需重启容器才能完全生效。")) return;
+    try {
+        const res = await fetch(`${API_BASE}/knowledge_base/clear`, {method: 'POST'});
+        const data = await res.json();
+        showToast(data.msg || '清空成功');
+        checkKBStatus();
+    } catch(e) { showToast('清空失败', 'error'); }
+}
   </script>
 </body>
 </html>

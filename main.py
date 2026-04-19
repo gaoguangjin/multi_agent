@@ -191,6 +191,14 @@ async def knowledge_base_status():
     count = kb_collection.count()
     return {"total_chunks": count}
 
+@app.post("/knowledge_base/clear")
+async def clear_knowledge_base():
+    import shutil, os
+    kb_dir = "./chroma_data"
+    if os.path.exists(kb_dir):
+        shutil.rmtree(kb_dir)
+    os.makedirs(kb_dir, exist_ok=True)
+    return {"status": "success", "msg": "物理数据已清除，请重启容器以重置内存"}
 
 # 启动命令：uvicorn main:app --host 0.0.0.0 --reload
 # UV 启动命令：uv run uvicorn main:app --host 0.0.0.0 --reload

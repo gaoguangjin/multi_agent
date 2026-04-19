@@ -1,8 +1,6 @@
 # 🔑 敏感配置
 .env
-.env.*
-*.key
-*.pem
+
 
 # 🐍 Python 缓存/虚拟环境
 __pycache__/

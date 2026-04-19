@@ -82,8 +82,7 @@ def crawl_and_summarize(url: str) -> str:
 
 
 # ============== RAG 知识库 ==============
-
-chroma_client = chromadb.Client(Settings(anonymized_telemetry=False))
+chroma_client = chromadb.PersistentClient(path="./chroma_data")
 kb_collection = chroma_client.get_or_create_collection(
     name="knowledge_base",
     metadata={"hnsw:space": "cosine"}
