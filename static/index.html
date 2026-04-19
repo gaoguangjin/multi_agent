@@ -37,13 +37,32 @@
     .result-box { margin-top: 16px; padding: 16px; background: #f1f5f9; border-radius: 8px; min-height: 80px; white-space: pre-wrap; word-break: break-word; }
     .result-box h3 { margin-bottom: 8px; font-size: 1rem; color: var(--text-muted); }
     .result-content { line-height: 1.7; }
+    .meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 8px; }
     .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: var(--card); border-radius: 8px; box-shadow: var(--shadow); transform: translateY(100px); opacity: 0; transition: 0.3s; z-index: 100; }
     .toast.show { transform: translateY(0); opacity: 1; }
     .toast.success { border-left: 4px solid var(--success); }
     .toast.error { border-left: 4px solid var(--error); }
     .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 8px; }
+
+    /* 🆕 新增：智能体快捷按钮样式 */
+    .agent-hints { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .agent-btn {
+      flex: 1 1 calc(25% - 6px);
+      min-width: 120px;
+      background: #f1f5f9;
+      color: var(--text);
+      border: 1px dashed var(--border);
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .agent-btn:hover { background: var(--primary); color: white; border-style: solid; transform: translateY(-1px); }
+    .agent-btn.active { background: var(--primary); color: white; border-style: solid; box-shadow: 0 2px 4px rgb(37 99 235 / 0.3); }
+    .agent-desc { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; text-align: center; }
   </style>
 </head>
 <body>
@@ -90,6 +109,16 @@
     <section id="panel-task" class="panel">
       <div class="form-group">
         <label>下达复合任务（自动拆解、多Agent协同）</label>
+        
+        <!-- 🆕 智能体功能提示按钮 -->
+        <div class="agent-hints">
+          <button class="agent-btn" onclick="fillTask('research', this)">🔍 调研Agent</button>
+          <button class="agent-btn" onclick="fillTask('content', this)">✍️ 内容创作Agent</button>
+          <button class="agent-btn" onclick="fillTask('translate', this)">🌐 翻译Agent</button>
+          <button class="agent-btn" onclick="fillTask('kb', this)">📚 知识库问答Agent</button>
+        </div>
+        <div class="agent-desc">👆 点击按钮可快速填入对应任务模板，支持直接修改后执行</div>
+
         <textarea id="task-input" placeholder="例如：调研A公司官网，生成一封合作意向邮件，要求正式商务风格"></textarea>
       </div>
       <button id="task-btn" onclick="handleTask()">执行任务</button>
@@ -115,6 +144,23 @@
         document.getElementById(tab.dataset.target).classList.add('active');
       });
     });
+
+    // 🆕 快捷任务模板填充
+    const taskTemplates = {
+      research: "请调研【目标公司/产品/领域】的公开信息，总结其核心功能、市场定位与竞争优势，要求数据准确、条理清晰。",
+      content: "请基于以下核心内容生成一封正式商务邮件/会议纪要：【填写具体内容】。要求格式规范、语气专业、重点突出。",
+      translate: "请将以下文本精准翻译成【目标语言，如英文/日文】，保留专业术语和原文格式：【填写待翻译文本】",
+      kb: "请根据已上传的文档知识库，回答以下问题：【填写问题】。要求严格基于文档内容，不编造，并标注信息来源。"
+    };
+
+    function fillTask(type, btnElement) {
+      const textarea = document.getElementById('task-input');
+      textarea.value = taskTemplates[type];
+      textarea.focus();
+      // 高亮当前按钮
+      document.querySelectorAll('.agent-btn').forEach(b => b.classList.remove('active'));
+      if(btnElement) btnElement.classList.add('active');
+    }
 
     // 检查知识库状态
     async function checkKBStatus() {
@@ -189,7 +235,7 @@
         });
         const data = await res.json();
         document.getElementById('query-result').innerHTML = marked.parse(data.answer || '无回答');
-        document.getElementById('query-meta').textContent = `耗时: 已检索 ${data.chunk_count} 个片段 | 生成字数: ${data.debug?.answer_length || 0}`;
+        document.getElementById('query-meta').textContent = `已检索 ${data.chunk_count} 个片段 | 生成字数: ${data.debug?.answer_length || 0}`;
         showToast('查询完成');
       } catch (e) {
         document.getElementById('query-result').textContent = '请求失败';
@@ -219,7 +265,6 @@
           body: JSON.stringify({ task: input.value.trim() })
         });
         const data = await res.json();
-        // 优先显示 final_result，支持 Markdown
         const content = data.final_result || '任务执行完成，但无最终结果';
         document.getElementById('task-result').innerHTML = marked.parse(content);
         showToast('任务完成');
