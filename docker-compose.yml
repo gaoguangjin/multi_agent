@@ -1,9 +1,12 @@
-version: '3'
 services:
   ai-app:
-    build: .
+    # 禁用构建，直接使用本地已有的镜像（跳过拉取python镜像！）
+    image: multi_agent-main-ai-app
     ports:
       - "8000:8000"
+    # 加载环境变量（解决API_KEY）
+    env_file: .env
+    # 强制挂载本地代码（你改的agents.py立刻生效！）
     volumes:
-      - ./uploads:/app/uploads
-      - ./static:/app/static
+      - .:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000

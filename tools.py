@@ -232,7 +232,14 @@ def search_knowledge_base(query: str, top_k: int = 3) -> list:
         traceback.print_exc()
         return []
 
-
+# 只需要普通的 Python 函数(新增网络搜索功能)
+def duckduckgo_search_logic(query: str) -> str:
+    from langchain_community.tools import DuckDuckGoSearchRun
+    search = DuckDuckGoSearchRun()
+    try:
+        return search.invoke(query)
+    except Exception as e:
+        return f"搜索失败：{str(e)}"
 
 # 知识库问答（普通函数，不加@tool）
 def knowledge_qa_tool(question: str) -> str:

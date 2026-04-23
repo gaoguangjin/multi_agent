@@ -11,3 +11,7 @@ PyPDF2
 python-docx
 python-multipart
 openai
+langchain-community
+langchain-community
+ddgs
+duckduckgo-search
