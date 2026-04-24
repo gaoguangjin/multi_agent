@@ -1,6 +1,10 @@
 # Multi-Agent 多智能体协同办公系统
 基于 LangChain+LangGraph+智谱AI+硅基流动 构建的企业级智能助手，支持任务拆解、多Agent协同、RAG知识库问答、内容创作。
 
+## 📝 更新日志 2026年4月22日
+1.新增爬取网站功能
+2.前端页面增加引导按钮
+
 ## 📝 更新日志 2026年4月19日
 1. 新增可视化前端页面
 2. 优化Dockerfile，提升构建速度
@@ -27,6 +31,7 @@ cp .env.example .env  # 填写ZHIPUAI_API_KEY
 # 安装依赖&启动
 pip install -r requirements.txt
 python main.py
+uv run uvicorn main:app --reload
 ```
 
 ### 2. Docker部署
