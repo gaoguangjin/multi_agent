@@ -54,11 +54,12 @@ async def upload_document(file: UploadFile = File(...)):
 async def query_knowledge_base(request: QueryRequest):
     from tools import search_knowledge_base, call_llm
     import re
-    
+
     print(f"[🔗/query] 收到查询: {request.question}")
-    
-    chunks = search_knowledge_base(request.question, top_k=3)
-    
+
+    # 改成 5 条，配合 reranker 精排
+    chunks = search_knowledge_base(request.question, top_k=5)
+
     if not chunks:
         return {
             "question": request.question,
@@ -66,17 +67,18 @@ async def query_knowledge_base(request: QueryRequest):
             "relevant_chunks": [],
             "chunk_count": 0
         }
-    
+
     question = request.question
     need_summary = any(kw in question for kw in ["总结", "概括", "讲的啥", "主要内容", "简述", "概述"])
-    
+
     word_limit = None
     match = re.search(r'(?:不超过|控制在|以内|)?(\d+)\s*字', question)
     if match:
         word_limit = int(match.group(1))
-    
-    context = "\n\n===\n\n".join(chunks[:3])
-    
+
+    # 用全部 reranker 返回的 chunks
+    context = "\n\n===\n\n".join(chunks)
+
     if need_summary:
         if word_limit and word_limit <= 100:
             prompt = f"""你是一个专业的文档总结专家。
@@ -110,17 +112,17 @@ async def query_knowledge_base(request: QueryRequest):
 【问题】{question}
 
 【回答】："""
-    
+
     try:
         answer = call_llm(prompt).strip()
-        
+
         if word_limit and word_limit <= 100 and len(answer) > word_limit + 10:
             compress_prompt = f"精炼到{word_limit}字：\n{answer}"
             answer = call_llm(compress_prompt).strip()
-        
+
     except Exception as e:
         answer = f"生成答案出错：{str(e)}"
-    
+
     return {
         "question": question,
         "answer": answer,
@@ -139,23 +141,23 @@ async def knowledge_base_status():
     count = kb_collection.count()
     return {"total_chunks": count}
 
-# ============== 清空知识库（终极修复版）=============
+# ============== 清空知识库 ==============
 @app.post("/knowledge_base/clear")
 async def clear_knowledge_base():
     try:
         existing_data = kb_collection.get()
         ids = existing_data.get("ids", [])
-        
+
         if not ids:
             return {"status": "success", "msg": "✅ 知识库已经是空的"}
-            
+
         kb_collection.delete(ids=ids)
-        
+
         return {
-            "status": "success", 
+            "status": "success",
             "msg": f"✅ 成功清空 {len(ids)} 条数据"
         }
-    
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -163,3 +165,5 @@ async def clear_knowledge_base():
             status_code=500,
             detail=f"清空失败: {str(e)}"
         )
+
+#uv run uvicorn main:app --reload

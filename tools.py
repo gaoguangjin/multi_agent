@@ -36,6 +36,50 @@ def get_embedding(text: str) -> list:
     return response.data[0].embedding
 
 
+# ============== Reranker（用硅基流动 HTTP API） ==============
+def rerank(query: str, documents: list, top_n: int = 5) -> list:
+    if not documents:
+        return []
+
+    try:
+        import requests as req
+
+        response = req.post(
+            "https://api.siliconflow.cn/v1/rerank",
+            headers={
+                "Authorization": f"Bearer {os.getenv('SILICON_API_KEY')}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "BAAI/bge-reranker-v2-m3",
+                "query": query,
+                "documents": documents,
+                "top_n": top_n,
+                "return_documents": False
+            },
+            timeout=30
+        )
+
+        result = response.json()
+
+        if "results" not in result:
+            print(f"[Reranker] 返回异常: {result}")
+            return documents[:top_n]
+
+        reranked = []
+        for item in result["results"]:
+            reranked.append(documents[item["index"]])
+
+        print(f"[Reranker] 输入 {len(documents)} 条，输出 {len(reranked)} 条")
+        for i, item in enumerate(result["results"]):
+            print(f"  [{i+1}] score={item['relevance_score']:.4f} | {documents[item['index']][:60]}...")
+
+        return reranked
+
+    except Exception as e:
+        print(f"[Reranker异常] {e}，回退使用原始排序")
+        return documents[:top_n]
+
 
 # ============== 工具1：文本翻译 ==============
 
@@ -155,8 +199,8 @@ def process_and_store(file_path: str) -> str:
         return f"处理文件失败：{str(e)}"
 
 
-# 从知识库检索（简化版，直接让 Chroma 返回 top-K）
-def search_knowledge_base(query: str, top_k: int = 10) -> list:
+# 从知识库检索 + Reranker 精排 + 总结类问题开头补充
+def search_knowledge_base(query: str, top_k: int = 5) -> list:
     try:
         total = kb_collection.count()
         if total == 0:
@@ -164,11 +208,10 @@ def search_knowledge_base(query: str, top_k: int = 10) -> list:
 
         query_embedding = get_embedding(query)
 
-        # 直接让 Chroma 返回 top_k 条，不要全量捞
-        n = min(top_k, total)
+        retrieve_n = min(20, total)
         results = kb_collection.query(
             query_embeddings=[query_embedding],
-            n_results=n,
+            n_results=retrieve_n,
             include=["documents", "distances", "metadatas"]
         )
 
@@ -177,24 +220,42 @@ def search_knowledge_base(query: str, top_k: int = 10) -> list:
 
         docs = results["documents"][0]
         distances = results["distances"][0]
-        metas = results["metadatas"][0] if results.get("metadatas") else [{}] * len(docs)
 
-        # 过滤掉太短的 chunk
-        valid = []
-        for doc, dist, meta in zip(docs, distances, metas):
+        valid_docs = []
+        for doc, dist in zip(docs, distances):
             if len(doc.strip()) < 30:
                 continue
-            similarity = 1 - dist
-            print(f"[检索] sim={similarity:.4f} | {meta.get('source','')} | {doc[:60]}...")
-            valid.append(doc)
+            print(f"[检索] sim={1-dist:.4f} | {doc[:60]}...")
+            valid_docs.append(doc)
 
-        return valid
+        if not valid_docs:
+            return []
+
+        # 第二步：Reranker 精排，取 top_k 条
+        reranked = rerank(query, valid_docs, top_n=top_k)
+
+        # 总结类问题：强制加入开头几段（简介/概述部分）
+        summary_keywords = ["总结", "概括", "讲的啥", "主要内容", "简述", "概述", "什么故事"]
+        if any(kw in query for kw in summary_keywords):
+            intro = kb_collection.get(
+                where={"chunk_index": {"$lte": 5}},
+                include=["documents"]
+            )
+            if intro["documents"]:
+                intro_docs = [d for d in intro["documents"] if d not in reranked]
+                reranked = intro_docs + reranked
+                reranked = reranked[:top_k]
+                print(f"[检索] 总结类问题，补充了 {len(intro_docs)} 条开头段落")
+
+        return reranked
+
 
     except Exception as e:
         print(f"[检索异常] {e}")
         import traceback
         traceback.print_exc()
         return []
+
 
 # 只需要普通的 Python 函数(新增网络搜索功能)
 def duckduckgo_search_logic(query: str) -> str:
@@ -205,18 +266,17 @@ def duckduckgo_search_logic(query: str) -> str:
     except Exception as e:
         return f"搜索失败：{str(e)}"
 
+
 # 知识库问答
 def knowledge_qa_tool(question: str) -> str:
     if kb_collection.count() == 0:
         return "知识库为空，请先通过 /upload 接口上传文档。"
 
-    # 改成取 10 条
-    chunks = search_knowledge_base(question, top_k=10)
+    chunks = search_knowledge_base(question, top_k=5)
 
     if not chunks:
         return "知识库中未找到与该问题相关的内容。"
 
-    # 拼接多条上下文
     context = "\n\n---\n\n".join(chunks)
 
     prompt = f"""你是一个严格的知识库问答机器人。
@@ -224,7 +284,7 @@ def knowledge_qa_tool(question: str) -> str:
 规则：
 1. 你只能使用下面【参考资料】中的信息回答问题
 2. 禁止使用你自己的知识或训练数据
-3. 如果参考资料中包含作者后记、创作感想等非正文内容，优先忽略，只使用正文内容回答
+3. 如果参考资料中包含作者后记、创作感想、番外说明等非正文内容，请优先忽略，只使用正文故事内容来回答
 4. 如果参考资料中没有提到问题相关内容，必须回答："参考资料中未提及此内容"
 5. 根据问题的需要合理组织回答长度，不要刻意缩短
 
