@@ -45,7 +45,7 @@ docker-compose up -d
 ```
 
 ## 🌐 访问地址
-- 在线演示：http://82.157.41.61:8000/
+- 在线演示：http://hlml.site:8000/
 - 接口文档：http://localhost:8000/docs
 - 接口测试：http://localhost:8000/redoc
 
