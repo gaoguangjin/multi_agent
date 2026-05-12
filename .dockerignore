@@ -1,26 +1,45 @@
-# Git 与 IDE
+# Git
 .git
-.github
-.vscode
-.idea
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Python 缓存与虚拟环境
-__pycache__
-*.pyc
-*.pyo
-.venv/
-venv/
-env/
-
-# 运行时数据（不应打包进镜像）
+# 本地数据（构建时不应打包进镜像，通过卷挂载）
+chroma_data/
 uploads/
-chroma/
-*.log
+logs/
+
+# 环境变量文件（安全：绝不打包进镜像）
 .env
 .env.*
 
-# 本地测试文件
-test_*.py
-*.ipynb
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# 文档
+*.md
+!README.md

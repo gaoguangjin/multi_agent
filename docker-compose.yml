@@ -1,12 +1,50 @@
+version: "3.8"
+
 services:
-  ai-app:
-    # 禁用构建，直接使用本地已有的镜像（跳过拉取python镜像！）
-    image: multi_agent-main-ai-app
+  multi-agent-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: multi-agent-system:latest
+    container_name: multi-agent-system
+    restart: unless-stopped
     ports:
       - "8000:8000"
-    # 加载环境变量（解决API_KEY）
-    env_file: .env
-    # 强制挂载本地代码（你改的agents.py立刻生效！）
+    environment:
+      # 必填：API密钥
+      - ZHIPUAI_API_KEY=${ZHIPUAI_API_KEY}
+      - SILICON_API_KEY=${SILICON_API_KEY}
+      # 可选：ChromaDB持久化路径（容器内）
+      - CHROMA_PATH=/app/chroma_data
+      # 可选：Python环境
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
     volumes:
-      - .:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+      # 知识库数据持久化
+      - chroma_data:/app/chroma_data
+      # 上传文件持久化
+      - uploads:/app/uploads
+      # 静态文件（如需外部挂载index.html等）
+      - static:/app/static
+      # 日志持久化（可选）
+      - ./logs:/app/logs
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  chroma_data:
+    driver: local
+  uploads:
+    driver: local
+  static:
+    driver: local
+
+networks:
+  agent-network:
+    driver: bridge

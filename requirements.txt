@@ -1,17 +1,25 @@
-langchain-openai
-langchain-core
-langgraph
-zhipuai
-python-dotenv
-fastapi
-uvicorn
-requests
-chromadb
-PyPDF2
-python-docx
-python-multipart
-openai
-langchain-community
-langchain-community
-ddgs
-duckduckgo-search
+# ========== Web Framework ==========
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+pydantic>=2.5.0,<3.0.0
+
+# ========== LLM & Agent Framework ==========
+zhipuai>=2.0.1
+openai>=1.30.0
+langchain-core>=0.3.0,<1.0.0
+langchain-openai>=0.3.0
+langchain-community>=0.3.0
+langgraph>=0.2.0,<1.0.0
+
+# ========== Vector DB ==========
+chromadb>=0.5.0
+
+# ========== HTTP & Search ==========
+requests>=2.31.0
+duckduckgo-search>=6.0.0
+
+# ========== Document Parsing ==========
+PyPDF2>=3.0.0
+python-docx>=1.1.0
